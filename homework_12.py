@@ -1,6 +1,24 @@
+import os.path
+import sys
 from collections import UserDict
 from datetime import datetime
 import pickle
+
+def input_error(func):
+    def wrapper(*args, **kwargs):
+        try:
+            return func(*args, **kwargs)
+        except KeyError:
+            return 'Give me a name and phone please'
+        except TypeError:
+            return "Give me name and phone please"
+        except ValueError:
+            return "Enter user name"
+        except NameError:
+            return "Give me name and phone please"
+    return wrapper
+
+
 class Field:
     def __init__(self, value):
         self.__value = value
@@ -24,13 +42,14 @@ class Phone(Field):
 
     @value.setter
     def value(self, phone):
+        print(f'setter phone{phone}')
         try:
             if not (phone.isdigit() and len(phone) == 10):
                 raise ValueError('Phone is not digit or 10 symbols long')
             self.__value = phone
         except ValueError as e:
             print(e)
-            self.__value = None
+            raise
 
 class Name(Field):
     pass
@@ -60,7 +79,13 @@ class Record:
         self.phones = []
 
     def add_phone(self, phone):
-        self.phones.append(Phone(phone))
+        print(phone)
+        phone_obj = Phone(phone)
+        if phone_obj.value is not None:
+            self.phones.append(phone_obj)
+        else:
+            print('Invalid phone number')
+        # self.phones.append(Phone(phone))
 
     def remove_phone(self, phone):
         for p in self.phones:
@@ -88,10 +113,9 @@ class Record:
             time_now = datetime.now()
             birthday_date = datetime.strptime(self.birthday.value, '%d-%m-%Y')
             next_birthday = datetime(time_now.year, birthday_date.month, birthday_date.day)
-            if time_now > birthday_date:
-                next_birthday = datetime(time_now.year +1 , birthday_date.month, birthday_date.day)
-            return (time_now - birthday_date).days
-
+            if time_now > next_birthday:  # Compare with next_birthday, not birthday_date
+                next_birthday = datetime(time_now.year + 1, birthday_date.month, birthday_date.day)
+            return (next_birthday - time_now).days
         else:
             return None
 
@@ -101,9 +125,11 @@ class Record:
 
 class AddressBook(UserDict):
 
-    def add_record(self, record):
-        self.data[record.name.value] = record
-
+    def add_record(self, record, phone = None):
+        if record.name.value in self.data:
+            self.data[record.name.value].add_phone(phone)
+        else:
+            self.data[record.name.value] = record
     def find(self, name):
         return self.data.get(name, None)
 
@@ -116,13 +142,16 @@ class AddressBook(UserDict):
         for i in range(0, len(records), n):
          yield records[i:i+n]
 
-    def save_fo_file(self, filename):
+    def save_to_file(self, filename):
         with open(filename, 'wb') as fp:
             pickle.dump(self.data, fp)
 
     def load_from_file(self, filename):
-        with open(filename, 'rb') as fp:
-            self.data = pickle.load(fp)
+        if os.path.getsize(filename) >0:
+            with open(filename, 'rb') as fp:
+                self.data = pickle.load(fp)
+        else:
+            self.data = {}
 
     def match(self, symblos):
         result = []
@@ -139,25 +168,29 @@ class AddressBook(UserDict):
 
 book = AddressBook()
 
-record = Record('artem')
-record.add_phone('3856712345')
-book.add_record(record)
-record1 = book.find('artem')
-
-record1.edit_phone('3856712345', '3856712346')
-
-record1 = book.save_fo_file(filename='new_file.pickle')
-print(record1)
-
 def hello():
     return f"Hello how can i help you?"
+
+
+@input_error
 def add(name, phone):
-    record = Record(name)
-    record.add_phone(phone)
-    book.add_record(record)
+    record = book.find(name)
+    if record:
+        record.add_phone(phone)
+    else:
+        record = Record(name)
+        record.add_phone(phone)
+        book.add_record(record)
     if record.phones[0].value:
         print('Телефон додано')
+    # record = Record(name)
+    # record.add_phone(phone)
+    # book.add_record(record)
+    # if record.phones[0].value:
+    #     print('Телефон додано')
 
+
+@input_error
 def change(name, phone):
     record = book.find(name)
     if record:
@@ -166,20 +199,35 @@ def change(name, phone):
     else:
         return f"контакту з іменем {name} не існує"
 
+
+
 def phone(name):
     record = book.find(name)
     if record:
-        return f"телефон контакту {name} це {record.phones[0].value}"
+        phones = ", ".join([phone.value for phone in record.phones])
+        return f"телефон контакту {name} це {phones}"
     else:
         return f"No user with such name"
+
 
 def match(symbols):
     results = book.match(symbols)
     return "\n".join(str(record) for record in results)
 
+def add_birthday(name, birthday):
+    record = book.find(name)
+    if record:
+        record.birthday = Birthday(birthday)
+    else:
+        return f"No user with such name"
+
+def days_to_birthday(name):
+    record = book.find(name)
+    return record.days_to_birtday()
 
 
-carry = {'phone': phone, 'change': change, 'add': add, 'hello': hello(), 'match' : match}
+
+carry = {'phone': phone, 'change': change, 'add': add, 'hello': hello(), 'match' : match, 'add_birthday': add_birthday, 'days_to_birthday': days_to_birthday}
 
 def parse_command(command):
     parts = command.split(' ')
@@ -194,6 +242,7 @@ def parse_command(command):
 
 
 def main():
+    book.load_from_file('new_file.pkl')
     while True:
         command = input('Enter a command: ').lower()
         if command == 'show all':
@@ -203,9 +252,22 @@ def main():
             break
         print(parse_command(command))
 
+    book.save_to_file('new_file.pkl')
+
 
 
 if __name__ == '__main__':
+
     main()
 
 
+#
+# record = Record('artem')
+# record.add_phone('3856712345')
+# book.add_record(record)
+# record1 = book.find('artem')
+#
+# record1.edit_phone('3856712345', '3856712346')
+#
+# record1 = book.save_fo_file(filename='new_file.pickle')
+# print(record1)
